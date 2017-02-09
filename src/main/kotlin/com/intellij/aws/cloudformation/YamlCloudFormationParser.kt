@@ -48,7 +48,7 @@ import org.jetbrains.yaml.psi.impl.YAMLCompoundValueImpl
 import org.jetbrains.yaml.psi.impl.YAMLQuotedTextImpl
 import java.util.ArrayList
 
-class YamlCloudFormationParser private constructor () {
+class YamlCloudFormationParser private constructor() {
   private val myProblems = ArrayList<CloudFormationProblem>()
   private val node2psi = mutableMapOf<CfnNode, PsiElement>()
   private val psi2node: Multimap<PsiElement, CfnNode> = ArrayListMultimap.create()
@@ -75,7 +75,7 @@ class YamlCloudFormationParser private constructor () {
   }
 
   private fun addProblemOnNameElement(property: YAMLKeyValue, description: String) =
-    addProblem(property.key ?: property, description)
+      addProblem(property.key ?: property, description)
 
 
   private fun root(root: YAMLMapping): CfnRootNode {
@@ -90,9 +90,15 @@ class YamlCloudFormationParser private constructor () {
       val section = CloudFormationSection.id2enum[name]
 
       return@mapNotNull when (section) {
-        CloudFormationSection.FormatVersion -> { formatVersion(value); null }
-        CloudFormationSection.Transform -> { checkAndGetStringValue(value); null }
-        CloudFormationSection.Description -> { checkAndGetStringValue(value); null }
+        CloudFormationSection.FormatVersion -> {
+          formatVersion(value); null
+        }
+        CloudFormationSection.Transform -> {
+          checkAndGetStringValue(value); null
+        }
+        CloudFormationSection.Description -> {
+          checkAndGetStringValue(value); null
+        }
         CloudFormationSection.Parameters -> parameters(property)
         CloudFormationSection.Resources -> resources(property)
         CloudFormationSection.Conditions -> conditions(property)
@@ -149,11 +155,10 @@ class YamlCloudFormationParser private constructor () {
       { nameNode, list -> CfnParameterNode(nameNode, list) }
   )
 
-  private fun <ResultNodeType : CfnNode, ValueNodeType: CfnNode> parseNameValues(
+  private fun <ResultNodeType : CfnNode, ValueNodeType : CfnNode> parseNameValues(
       keyValueElement: YAMLKeyValue,
       valueFactory: (YAMLKeyValue) -> ValueNodeType,
-      resultFactory: (CfnScalarValueNode?, List<ValueNodeType>) -> ResultNodeType): ResultNodeType
-  {
+      resultFactory: (CfnScalarValueNode?, List<ValueNodeType>) -> ResultNodeType): ResultNodeType {
     val keyElement = keyValueElement.key
     val nameNode = if (keyElement == null) null else CfnScalarValueNode(keyValueElement.keyText).registerNode(keyElement)
 
@@ -250,7 +255,7 @@ class YamlCloudFormationParser private constructor () {
 
   private fun resourceDependsOn(property: YAMLKeyValue): CfnResourceDependsOnNode {
     val value = property.value
-    val valuesNodes = when(value) {
+    val valuesNodes = when (value) {
       null -> emptyList()
       is YAMLSequence -> value.items.mapNotNull { checkAndGetStringElement(it.value) }
       is YAMLScalar -> checkAndGetStringElement(value)?.let { listOf(it) } ?: emptyList()
@@ -268,25 +273,30 @@ class YamlCloudFormationParser private constructor () {
 
   private fun resourceProperties(propertiesProperty: YAMLKeyValue): CfnResourcePropertiesNode {
     val nameNode = keyName(propertiesProperty)
-    val properties = propertiesProperty.value as YAMLMapping
+    try {
+      val properties = propertiesProperty.value as YAMLMapping
 
-    val propertyNodes = properties.keyValues.mapNotNull { property ->
-      val propertyName = property.name
-      if (propertyName == CloudFormationConstants.CommentResourcePropertyName) {
-        return@mapNotNull null
+      val propertyNodes = properties.keyValues.mapNotNull { property ->
+        val propertyName = property.name
+        if (propertyName == CloudFormationConstants.CommentResourcePropertyName) {
+          return@mapNotNull null
+        }
+
+        val propertyNameNode = keyName(property)
+
+        val yamlValueNode = property.value
+        val valueNode = if (yamlValueNode == null) null else {
+          expression(yamlValueNode, AllowFunctions.True)
+        }
+
+        return@mapNotNull CfnResourcePropertyNode(propertyNameNode, valueNode).registerNode(property)
       }
-
-      val propertyNameNode = keyName(property)
-
-      val yamlValueNode = property.value
-      val valueNode = if (yamlValueNode == null) null else {
-        expression(yamlValueNode, AllowFunctions.True)
-      }
-
-      return@mapNotNull CfnResourcePropertyNode(propertyNameNode, valueNode).registerNode(property)
+      return CfnResourcePropertiesNode(nameNode, propertyNodes).registerNode(propertiesProperty)
+    } catch (e: ClassCastException) {
+      return CfnResourcePropertiesNode(nameNode, emptyList()).registerNode(propertiesProperty)
     }
 
-    return CfnResourcePropertiesNode(nameNode, propertyNodes).registerNode(propertiesProperty)
+
   }
 
   private fun YAMLScalar.cfnPatchedTextValue(): String {
@@ -393,7 +403,7 @@ class YamlCloudFormationParser private constructor () {
               if (itemValue != null) expression(itemValue, allowFunctions) else null
             }
             CfnFunctionNode(nameNode, functionId, items).registerNode(value)
-          } else if (yamlValueNode == null){
+          } else if (yamlValueNode == null) {
             CfnFunctionNode(nameNode, functionId, listOf()).registerNode(value)
           } else {
             CfnFunctionNode(nameNode, functionId, listOf(expression(yamlValueNode, allowFunctions))).registerNode(value)
